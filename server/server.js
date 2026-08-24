@@ -10,6 +10,8 @@ const server=http.createServer(app);
 const ROOM_GRACE_MS=20000;
 const ROOM_END_TTL_MS=10*60*1000;
 const VALID_EMOTES=new Set(['mate','mano','ceja','risa','llanto','golpe','fuego','ojo','carta','aplauso','sospecha','termo']);
+const CHAT_MAX=120;
+const CHAT_RATE_MS=550;
 const io=new Server(server,{maxHttpBufferSize:64*1024,connectionStateRecovery:{maxDisconnectionDuration:ROOM_GRACE_MS,skipMiddlewares:true}});
 const PORT=process.env.PORT||3000;
 const ROOT=path.join(__dirname,'..','client');
@@ -58,6 +60,19 @@ function scheduleEndedRoomExpiry(g){
   expiryTimers.set(g.code,setTimeout(()=>closeRoom(g.code,null,'roomExpired',{reason:'expired'}),ROOM_END_TTL_MS));
 }
 function roomMode(value){return logic.normalizeMode(value);}
+function cleanChatText(value){return String(value??'').replace(/[\u0000-\u001F\u007F]/g,' ').replace(/\s+/g,' ').trim().slice(0,CHAT_MAX);}
+function roomLog(g,item){if(!g)return;g.chatMessages=Array.isArray(g.chatMessages)?g.chatMessages:[];g.chatMessages.push(item);if(g.chatMessages.length>60)g.chatMessages.splice(0,g.chatMessages.length-60);}
+function sendChatHistory(socket,g){if(!socket||!g)return;socket.emit('chatHistory',{messages:Array.isArray(g.chatMessages)?g.chatMessages:[]});}
+function interactionFor(g,id,fn,args,r){
+  if(!r?.ok||fn==='playCard')return null;const p=g.players[id];if(!p)return null;let text='';
+  if(fn==='callTruco')text=`¡${r.label||'Truco'}!`;
+  else if(fn==='respondTruco'){const a=args[0];text=a==='raise'?`¡${r.label||'Subo'}!`:(a===true||a==='want'?'¡Quiero!':'No quiero');}
+  else if(fn==='callEnvido')text=`¡${r.label||'Envido'}!`;
+  else if(fn==='respondEnvido'){const a=args[0];text=(a===true||a==='want')?'¡Quiero!':'No quiero';}
+  else if(fn==='fold')text='Me voy al mazo';
+  if(!text)return null;return {from:id,name:p.name,team:p.team,kind:fn,text,ts:Date.now()};
+}
+function emitInteraction(g,d){if(!g||!d)return;roomLog(g,{system:true,text:`${d.name}: ${d.text}`,ts:d.ts});io.to(g.code).emit('gameInteraction',d);}
 
 io.on('connection',socket=>{
   if(socket.recovered&&socket.data.room){
@@ -73,8 +88,8 @@ io.on('connection',socket=>{
     const wrapped=payload&&typeof payload==='object'&&payload.profile;
     const profile=wrapped?payload.profile:(payload||{}),mode=roomMode(wrapped?payload.mode:'1v1');
     let c;do{c=code();}while(rooms.has(c));
-    const g=logic.newGame(c,15,mode);rooms.set(c,g);logic.addPlayer(g,socket.id,profile||{});
-    socket.join(c);socket.data.room=c;safeCb(cb,{ok:true,code:c,mode:g.mode,maxPlayers:g.maxPlayers});emitRoom(g);
+    const g=logic.newGame(c,15,mode);g.chatMessages=[];rooms.set(c,g);logic.addPlayer(g,socket.id,profile||{});
+    socket.join(c);socket.data.room=c;safeCb(cb,{ok:true,code:c,mode:g.mode,maxPlayers:g.maxPlayers});emitRoom(g);sendChatHistory(socket,g);
   });
 
   socket.on('joinRoom',(payload,cb)=>{
@@ -87,13 +102,13 @@ io.on('connection',socket=>{
     if(g.phase!=='waiting'||g.order.length>=g.maxPlayers)return safeCb(cb,{ok:false,error:'Sala llena'});
     if(socket.data.room)leaveCurrentRoom(socket,'joined_other_room');
     if(!logic.addPlayer(g,socket.id,payload.profile||{}))return safeCb(cb,{ok:false,error:'No se pudo entrar a la sala'});
-    socket.join(g.code);socket.data.room=g.code;safeCb(cb,{ok:true,code:g.code,mode:g.mode,maxPlayers:g.maxPlayers,playerCount:g.order.length});emitRoom(g);
+    socket.join(g.code);socket.data.room=g.code;safeCb(cb,{ok:true,code:g.code,mode:g.mode,maxPlayers:g.maxPlayers,playerCount:g.order.length});emitRoom(g);sendChatHistory(socket,g);
   });
 
   const act=(fn,...args)=>{
     const roomCode=socket.data.room,g=rooms.get(roomCode);if(!g){socket.emit('actionError','La sala ya no existe');return;}
     if(roomHasDisconnect(roomCode)){socket.emit('actionError','Esperando que un jugador se reconecte');return;}
-    const r=logic[fn](g,socket.id,...args);if(r&&!r.ok)socket.emit('actionError',r.error||'Acción inválida');emitRoom(g);
+    const r=logic[fn](g,socket.id,...args);if(r&&!r.ok)socket.emit('actionError',r.error||'Acción inválida');else emitInteraction(g,interactionFor(g,socket.id,fn,args,r));emitRoom(g);
     if(g.needsDeal)setTimeout(()=>{const current=rooms.get(roomCode);if(current===g&&g.needsDeal&&g.phase==='playing'&&!roomHasDisconnect(roomCode)){logic.nextHandIfNeeded(g);emitRoom(g);}},2200);
     if(g.phase==='ended')scheduleEndedRoomExpiry(g);return r;
   };
@@ -110,11 +125,18 @@ io.on('connection',socket=>{
     if(!g)return safeCb(cb,{ok:false,error:'La sala ya no existe'});
     if(g.phase!=='ended')return safeCb(cb,{ok:false,error:'La partida todavía no terminó'});
     if(!g.players[socket.id])return safeCb(cb,{ok:false,error:'Jugador inválido'});
-    if(!g.rematchReady.includes(socket.id))g.rematchReady.push(socket.id);
+    if(!g.rematchReady.includes(socket.id)){g.rematchReady.push(socket.id);emitInteraction(g,{from:socket.id,name:g.players[socket.id].name,team:g.players[socket.id].team,kind:'rematch',text:'Pidió revancha',ts:Date.now()});}
     safeCb(cb,{ok:true,readyCount:g.rematchReady.length,max:g.order.length});
     if(g.rematchReady.length===g.order.length){
       clearTimer(expiryTimers,roomCode);logic.restartMatch(g);io.to(roomCode).emit('rematchStarted',{matchNumber:g.matchNumber});emitRoom(g);
     }else emitRoom(g);
+  });
+
+  socket.on('chatMessage',(payload,cb)=>{
+    const roomCode=socket.data.room,g=rooms.get(roomCode);if(!g||!g.players[socket.id])return safeCb(cb,{ok:false,error:'No estás en una sala'});
+    const now=Date.now();if(now-(socket.data.lastChatAt||0)<CHAT_RATE_MS)return safeCb(cb,{ok:false,error:'Esperá un instante antes de enviar otro mensaje'});
+    const text=cleanChatText(payload&&typeof payload==='object'?payload.text:payload);if(!text)return safeCb(cb,{ok:false,error:'Mensaje vacío'});
+    socket.data.lastChatAt=now;const msg={from:socket.id,name:g.players[socket.id].name,text,ts:now};roomLog(g,msg);io.to(roomCode).emit('chatMessage',msg);safeCb(cb,{ok:true});
   });
 
   socket.on('emote',name=>{
