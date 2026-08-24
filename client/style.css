@@ -79,3 +79,86 @@
   .team-game .hand{bottom:4px}
   .team-game .actions{bottom:100px}
 }
+
+/* UX beta final refresh */
+.slot,.multi-play-slot{position:relative}
+.ghost-card{opacity:.82;filter:grayscale(.08) drop-shadow(0 8px 8px rgba(0,0,0,.45))}
+.slot-badge{display:inline-block;margin-top:6px;padding:4px 8px;border-radius:999px;background:rgba(3,21,9,.82);border:1px solid rgba(241,206,91,.28);color:#e9d487;font-size:10px;font-weight:800;letter-spacing:.4px}
+.history{width:290px;max-height:230px;padding-right:4px}
+.hist{font-size:13px;line-height:1.35}
+.round-msg{line-height:1.35;max-width:300px}
+.actions{left:50%;right:auto;top:auto;bottom:180px;transform:translateX(-50%);flex-direction:row;flex-wrap:wrap;justify-content:center;align-items:center;gap:10px;max-width:min(620px,calc(100% - 60px));padding:10px 12px;border-radius:20px;background:rgba(3,21,9,.74);border:1px solid rgba(241,206,91,.22);backdrop-filter:blur(3px)}
+.actions button{min-width:138px}
+.hand{gap:14px}
+.card{width:122px}
+.playedCard{width:112px}
+.cardBtn{display:flex;align-items:flex-end;justify-content:center}
+.cardBtn:disabled .card{filter:grayscale(.15) brightness(.92) drop-shadow(0 10px 10px rgba(0,0,0,.5))}
+@media(max-width:760px){
+  .center{inset:120px 10px 175px 10px;grid-template-columns:1fr;gap:10px}
+  .round-msg{max-width:none;font-size:14px;padding:14px 12px}
+  .history{display:block;left:8px;right:8px;bottom:140px;width:auto;max-height:90px;display:flex;gap:6px;overflow:auto}
+  .hist{min-width:190px;margin-top:0;font-size:11px}
+  .actions{left:8px;right:8px;transform:none;max-width:none;bottom:86px;gap:6px;padding:8px;justify-content:flex-start}
+  .actions button{min-width:0;font-size:11px;padding:9px 11px;flex:0 0 auto}
+  .hand{bottom:8px;gap:10px}
+  .card{width:88px}
+  .playedCard{width:84px}
+  .slot{height:120px}
+}
+@media(max-width:480px){
+  .actions{bottom:82px}
+  .card{width:78px}
+  .playedCard{width:74px}
+  .slot{height:110px}
+  .slot-badge{font-size:9px;padding:3px 7px}
+}
+
+/* Persistent played cards + cleaner controls */
+.played-pile{display:flex;align-items:flex-end;justify-content:center;min-height:170px;padding:6px 0 2px}
+.played-pile .pile-card{margin-left:-38px;transform-origin:bottom center}
+.played-pile .pile-card:first-child{margin-left:0}
+.played-pile .pile-card:nth-child(1){transform:rotate(-5deg)}
+.played-pile .pile-card:nth-child(2){transform:rotate(1deg) translateY(-2px)}
+.played-pile .pile-card:nth-child(3){transform:rotate(5deg)}
+.played-pile .pile-card.latest{filter:drop-shadow(0 14px 12px rgba(0,0,0,.55))}
+.slot{display:flex;flex-direction:column;align-items:center;justify-content:center}
+.multi-play-slot .played-pile{min-height:92px}
+.multi-play-slot .played-pile .pile-card{width:58px;margin-left:-25px}
+.multi-play-slot .slot-badge{margin-top:1px;font-size:8px}
+.actions{bottom:190px}
+@media(max-width:760px){
+  .table{height:88vh;min-height:590px}
+  .center{inset:158px 8px 222px 8px;gap:7px}
+  .rival-zone{max-width:calc(100% - 16px)}
+  .history{display:flex;left:8px;right:8px;top:102px;bottom:auto;width:auto;max-height:50px;gap:6px;overflow-x:auto;overflow-y:hidden}
+  .hist{min-width:175px;max-height:48px;overflow:hidden;margin:0;padding:6px 8px;font-size:9px;line-height:1.15}
+  .actions{left:8px;right:8px;bottom:154px;transform:none;max-width:none;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;padding:7px 8px;border-radius:14px}
+  .actions button{font-size:10px;padding:8px 10px;min-width:max-content;border-radius:10px}
+  .hand{bottom:7px;gap:7px}
+  .card{width:82px}
+  .playedCard{width:78px}
+  .played-pile{min-height:120px}
+  .played-pile .pile-card{margin-left:-30px}
+  .slot{height:135px}
+  .round-msg{font-size:11px;padding:9px 10px}
+  .team-game .center{inset:154px 5px 205px 5px}
+  .team-game .actions{bottom:136px}
+  .team-game .hand{bottom:5px}
+  .multi-play-slot{min-height:82px}
+  .multi-play-slot .played-pile{min-height:64px}
+  .multi-play-slot .played-pile .pile-card{width:42px;margin-left:-20px}
+}
+@media(max-width:480px){
+  .table{height:90vh;min-height:560px;padding:7px;border-width:5px}
+  .center{inset:150px 4px 205px 4px}
+  .actions{bottom:144px}
+  .card{width:76px}
+  .playedCard{width:70px}
+  .played-pile{min-height:108px}
+  .played-pile .pile-card{margin-left:-27px}
+  .slot{height:120px}
+  .history{top:96px}
+  .team-game .actions{bottom:126px}
+  .multi-play-slot .played-pile .pile-card{width:36px;margin-left:-17px}
+}
