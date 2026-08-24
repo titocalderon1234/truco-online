@@ -6,6 +6,7 @@ function loadProfile(){try{return Profile.normalize(JSON.parse(localStorage.getI
 let profile=loadProfile(),pendingAvatar=profile.avatar;
 let mode='offline',socket=null,onlineState=null,game=null,bot=null,botMemory=null,botTimer=null,nextHandTimer=null,speechTimer=null;
 let onlineBusy=false,onlineActionPending=false,leavingOnline=false,connectionWaitModal=false,ownConnectionLost=false,onlineCreateMode='1v1',lastOnlinePhase=null;
+let chatOpen=false,chatUnread=0,interactionBusy=false;const interactionQueue=[];
 const lostOnlinePlayers=new Map();
 const recordedOnlineRooms=new Set();
 let campaign=loadCampaign(),offlineContext={source:'free',replay:false,botId:null};
@@ -92,6 +93,18 @@ function sendEmote(e){if(!emotes.includes(e))return;showEmote(e);if(mode==='onli
 function showEmote(e){if(!emotes.includes(e))return;const host=$('#floatingEmote');host.innerHTML='';const img=document.createElement('img');img.src=asset('emotes/'+e+'.gif')+'?t='+Date.now();img.alt=e;host.appendChild(img);setTimeout(()=>{if(host.contains(img))host.removeChild(img);},1700);}
 function showActionError(msg){const el=$('#actionError');if(!el)return;el.textContent=msg||'Acción inválida';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1700);}
 
+function updateChatUnread(){const badge=$('#chatUnread');if(!badge)return;badge.textContent=String(chatUnread);badge.classList.toggle('hidden',chatUnread<=0);}
+function setChatVisible(available){const btn=$('#chatBtn');if(btn)btn.classList.toggle('hidden',!available);if(!available)closeOnlineChat();}
+function openOnlineChat(){if(mode!=='online')return;chatOpen=true;chatUnread=0;updateChatUnread();$('#onlineChat').classList.remove('hidden');setTimeout(()=>$('#chatInput')?.focus(),40);}
+function closeOnlineChat(){chatOpen=false;$('#onlineChat')?.classList.add('hidden');}
+function toggleOnlineChat(){if(chatOpen)closeOnlineChat();else openOnlineChat();}
+function resetOnlineComms(){chatOpen=false;chatUnread=0;interactionBusy=false;interactionQueue.length=0;updateChatUnread();const list=$('#chatMessages');if(list)list.innerHTML='';closeOnlineChat();const bubble=$('#onlineInteraction');if(bubble){bubble.classList.remove('show','mine','team');bubble.textContent='';}}
+function chatClock(ts){try{return new Date(ts||Date.now()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(_){return '';}}
+function appendChatMessage(d){if(!d||!d.text)return;const box=$('#chatMessages');if(!box)return;const row=document.createElement('div');row.className='chat-row'+(d.system?' system':'')+(d.from===onlineState?.me?.id?' mine':'');const head=document.createElement('div');head.className='chat-meta';const name=document.createElement('b');name.textContent=d.system?'Mesa':(d.from===onlineState?.me?.id?'Vos':(d.name||'Jugador'));const time=document.createElement('small');time.textContent=chatClock(d.ts);head.append(name,time);const text=document.createElement('div');text.className='chat-text';text.textContent=d.text;row.append(head,text);box.appendChild(row);while(box.children.length>80)box.firstElementChild.remove();box.scrollTop=box.scrollHeight;if(!d.system&&d.from!==onlineState?.me?.id&&!chatOpen){chatUnread=Math.min(99,chatUnread+1);updateChatUnread();}}
+function showNextInteraction(){if(interactionBusy||!interactionQueue.length)return;interactionBusy=true;const d=interactionQueue.shift(),el=$('#onlineInteraction');if(!el){interactionBusy=false;return;}const who=d.from===onlineState?.me?.id?'Vos':(d.name||'Jugador');el.textContent=`${who}: ${d.text}`;el.className='online-interaction show'+(d.from===onlineState?.me?.id?' mine':'')+(d.team!==undefined&&onlineState?.me&&d.team===onlineState.me.team?' team':'');setTimeout(()=>{el.classList.remove('show');setTimeout(()=>{interactionBusy=false;showNextInteraction();},180);},1650);}
+function queueOnlineInteraction(d){if(!d?.text)return;interactionQueue.push(d);appendChatMessage({system:true,text:`${d.name||'Jugador'}: ${d.text}`,ts:d.ts});showNextInteraction();}
+function sendOnlineChat(){const input=$('#chatInput');if(!input||mode!=='online'||!socket?.connected)return;const text=input.value.trim();if(!text)return;input.value='';socket.emit('chatMessage',{text},r=>{if(!r?.ok){showActionError(r?.error||'No se pudo enviar el mensaje');input.value=text;}});}
+
 function botSpeak(event,force=false){
   if(mode!=='offline'||!bot||!botMemory)return;
   const text=Bots.maybePhrase(bot.id,event,botMemory,force);if(!text)return;
@@ -153,7 +166,7 @@ function postAction(result){
 }
 
 function initOffline(botId,context={}){
-  mode='offline';clearTimeout(botTimer);clearTimeout(nextHandTimer);
+  mode='offline';setChatVisible(false);resetOnlineComms();clearTimeout(botTimer);clearTimeout(nextHandTimer);
   offlineContext={source:context.source||'free',replay:!!context.replay,botId:botId||null};
   bot={...(Bots.BOTS[botId]||Bots.BOTS[Bots.BOT_ORDER[Math.floor(Math.random()*Bots.BOT_ORDER.length)]]),seat:'rival'};
   botMemory=Bots.createMemory();game=Core.newGame('LOCAL',15);game.botId=bot.id;
@@ -202,7 +215,7 @@ function renderOnlineTeams(s){
   $('#myAvatar').src=avatarSrc(s.me?.avatar||profile.avatar);$('#myName').textContent=s.me?.name||profile.name;
   const turnP=allOnlinePlayers(s).find(p=>p.id===s.turn);
   const baseMsg=s.phase==='waiting'?`Esperando jugadores ${s.playerCount}/${s.maxPlayers} · ${onlineModeLabel(s.mode)}`:(s.message||`Ronda ${s.round||1}`);
-  const extra=turnP&&s.phase==='playing'&&!s.needsDeal?` · Juega ${turnP.name}`:(!Object.values(s.table||{}).some(Boolean)&&last?` · ${teamTrickSummary(last,s.me.team)}`:'');
+  const extra=turnP&&s.phase==='playing'&&!s.needsDeal?` · Juega ${turnP.name}`:'';
   $('#roundMsg').textContent=baseMsg+extra;
   $('#history').innerHTML=(s.history||[]).slice(-3).reverse().map(h=>{const result=h.winnerTeam===null?'Parda':h.winnerTeam===s.me.team?'Ganó tu equipo':'Ganó el rival';const detail=allOnlinePlayers(s).map(p=>h.cards?.[p.id]?`${esc(p.name)}: ${cardName(h.cards[p.id])}`:null).filter(Boolean).join(' · ');return `<div class="hist">Baza ${h.round}: ${detail}<br><b>${result}</b></div>`;}).join('');
   $('#hand').innerHTML=(s.me?.hand||[]).map(c=>`<button class="cardBtn" data-card="${c.id}" ${s.actions?.canPlay?'':'disabled'}>${cardImg(c)}</button>`).join('');$$('.cardBtn').forEach(b=>b.onclick=()=>playMyCard(b.dataset.card));
@@ -222,7 +235,7 @@ function renderCommon(s){
   const myPile=cardsForPile(s.history,myCurrent,s.tableSettled,h=>h.cards?.me),rivalPile=cardsForPile(s.history,rivalCurrent,s.tableSettled,h=>h.cards?.rival);
   $('#myPlayed').innerHTML=cardPile(myPile,'mine-pile')+(last?lastBadge(last.winner==='me'?'Baza ganada':last.winner==='rival'?'Baza perdida':'Parda'):'');
   $('#rivalPlayed').innerHTML=cardPile(rivalPile,'rival-pile')+(last?lastBadge(last.winner==='rival'?'Baza ganada':last.winner==='me'?'Baza perdida':'Parda'):'');
-  const baseMsg=s.message||`Ronda ${s.round||1}`;const extra=last?` · ${singleTrickSummary(last)}`:'';$('#roundMsg').textContent=baseMsg+extra;
+  const baseMsg=s.message||`Ronda ${s.round||1}`;$('#roundMsg').textContent=baseMsg;
   $('#history').innerHTML=(s.history||[]).slice(-3).reverse().map(h=>`<div class="hist">Baza ${h.round}: ${h.cards?.me?cardName(h.cards.me):'Vos'} vs ${h.cards?.rival?cardName(h.cards.rival):'Rival'}<br><b>${h.winner==='me'?'Ganaste':h.winner==='rival'?'Ganó rival':'Parda'}</b></div>`).join('');
   $('#hand').innerHTML=(s.me?.hand||[]).map(c=>`<button class="cardBtn" data-card="${c.id}" ${s.actions?.canPlay?'':'disabled'}>${cardImg(c)}</button>`).join('');
   $$('.cardBtn').forEach(b=>b.onclick=()=>playMyCard(b.dataset.card));renderActions(s.actions||{},s);
@@ -231,16 +244,16 @@ function envLabel(t){return t==='envido'?'Envido':t==='real'?'Real Envido':'Falt
 function renderActions(a,s){
   let html='';
   if(a.canRespondEnvido){
-    html+=`<button onclick="respondEnvido(true)">Quiero</button><button onclick="respondEnvido(false)">No quiero</button>`;
-    for(const r of a.envidoRaises||[])html+=`<button onclick="callEnvido('${r}')">${envLabel(r)}</button>`;
+    html+=`<button class="action-btn action-accept" onclick="respondEnvido(true)">Quiero</button><button class="action-btn action-decline" onclick="respondEnvido(false)">No quiero</button>`;
+    for(const r of a.envidoRaises||[])html+=`<button class="action-btn action-raise" onclick="callEnvido('${r}')">${envLabel(r)}</button>`;
   }else if(a.canRespondTruco){
-    html+=`<button onclick="respondTruco('want')">Quiero</button><button onclick="respondTruco('no')">No quiero</button>`;
-    if(a.canCounterTruco){const nxt=(s.truco?.pending||1)+1;html+=`<button onclick="respondTruco('raise')">${nxt===3?'Retruco':'Vale 4'}</button>`;}
-    for(const r of a.envidoCalls||[])html+=`<button onclick="callEnvido('${r}')">${envLabel(r)}</button>`;
+    html+=`<button class="action-btn action-accept" onclick="respondTruco('want')">Quiero</button><button class="action-btn action-decline" onclick="respondTruco('no')">No quiero</button>`;
+    if(a.canCounterTruco){const nxt=(s.truco?.pending||1)+1;html+=`<button class="action-btn action-raise" onclick="respondTruco('raise')">${nxt===3?'Retruco':'Vale 4'}</button>`;}
+    for(const r of a.envidoCalls||[])html+=`<button class="action-btn action-envido" onclick="callEnvido('${r}')">${envLabel(r)}</button>`;
   }else{
-    for(const r of a.envidoCalls||[])html+=`<button onclick="callEnvido('${r}')">${envLabel(r)}</button>`;
-    if(a.trucoCall)html+=`<button onclick="callTruco()">${a.trucoCall}</button>`;
-    if(a.canFold)html+=`<button class="foldBtn" onclick="fold()">Ir al mazo</button>`;
+    for(const r of a.envidoCalls||[])html+=`<button class="action-btn action-envido" onclick="callEnvido('${r}')">${envLabel(r)}</button>`;
+    if(a.trucoCall)html+=`<button class="action-btn action-raise" onclick="callTruco()">${a.trucoCall}</button>`;
+    if(a.canFold)html+=`<button class="action-btn action-fold" onclick="fold()">Ir al mazo</button>`;
   }
   $('#actions').innerHTML=html;
 }
@@ -317,12 +330,12 @@ function botStep(){
 
 function setOnlineBusy(value){onlineBusy=!!value;$('#createRoom').disabled=onlineBusy;$('#joinRoom').disabled=onlineBusy;}
 function disconnectOnlineLocal(){
-  const s=socket;socket=null;onlineState=null;mode='offline';onlineActionPending=false;leavingOnline=false;connectionWaitModal=false;lastOnlinePhase=null;lostOnlinePlayers.clear();setOnlineBusy(false);
+  const s=socket;socket=null;onlineState=null;mode='offline';onlineActionPending=false;leavingOnline=false;connectionWaitModal=false;lastOnlinePhase=null;lostOnlinePlayers.clear();setOnlineBusy(false);setChatVisible(false);resetOnlineComms();
   if(s){try{s.removeAllListeners();s.disconnect();}catch(_){}}
   ownConnectionLost=false;
 }
 function leaveOnlineRoom(destination='menu'){
-  const s=socket;leavingOnline=true;onlineState=null;mode='offline';onlineActionPending=false;setOnlineBusy(false);socket=null;connectionWaitModal=false;closeModal();show(destination);
+  const s=socket;leavingOnline=true;onlineState=null;mode='offline';onlineActionPending=false;setOnlineBusy(false);socket=null;connectionWaitModal=false;setChatVisible(false);resetOnlineComms();closeModal();show(destination);
   if(s){
     let finished=false;const finish=()=>{if(finished)return;finished=true;try{s.removeAllListeners();s.disconnect();}catch(_){}};
     try{s.emit('leaveRoom',finish);}catch(_){finish();}
@@ -343,9 +356,12 @@ function renderConnectionWait(graceMs=20000){
 }
 function connect(){
   if(socket)return;leavingOnline=false;socket=io();
-  socket.on('state',s=>{if(leavingOnline)return;mode='online';onlineState=s;releaseOnlineAction(false);connectionWaitModal=false;if(lastOnlinePhase==='ended'&&s.phase!=='ended')closeModal();lastOnlinePhase=s.phase;renderOnline(s);show('game');});
+  socket.on('state',s=>{if(leavingOnline)return;mode='online';onlineState=s;setChatVisible(true);releaseOnlineAction(false);connectionWaitModal=false;if(lastOnlinePhase==='ended'&&s.phase!=='ended')closeModal();lastOnlinePhase=s.phase;renderOnline(s);show('game');});
   socket.on('actionError',msg=>{releaseOnlineAction(true);showActionError(msg);});
   socket.on('emote',d=>showEmote(d?.name));
+  socket.on('chatMessage',d=>appendChatMessage(d));
+  socket.on('chatHistory',d=>{const box=$('#chatMessages');if(box)box.innerHTML='';for(const m of (d?.messages||[]))appendChatMessage(m);});
+  socket.on('gameInteraction',d=>queueOnlineInteraction(d));
   socket.on('opponentConnectionLost',d=>{if(leavingOnline)return;lostOnlinePlayers.set(d?.playerId||('unknown-'+Date.now()),d?.playerName||'Un jugador');renderConnectionWait(d?.graceMs||20000);});
   socket.on('opponentReconnected',d=>{if(d?.playerId)lostOnlinePlayers.delete(d.playerId);renderConnectionWait();showActionError(`${d?.playerName||'Jugador'} reconectado`);});
   socket.on('waitingPlayerLeft',d=>{if(d?.playerId)lostOnlinePlayers.delete(d.playerId);renderConnectionWait();showActionError(`${d?.playerName||'Un jugador'} salió de la sala`);});
@@ -400,5 +416,5 @@ $('#profileNameInput').onkeydown=e=>{if(e.key==='Enter')saveProfileEditor();};
 $('#rulesBtn').onclick=()=>modal('Reglas','<p>Truco argentino a 15 puntos. Jerarquía real de cartas, pardas por mano, Truco → Retruco → Vale 4 y Envido completo con Envido, Real Envido y Falta Envido.</p><p><b>2 vs 2 y 3 vs 3:</b> los equipos se sientan alternados. En cada baza juegan todos los jugadores activos; gana el equipo de la carta más alta. Si las cartas más altas empatadas pertenecen a equipos distintos, la baza es parda y vuelve a salir quien había iniciado esa baza. En el Envido cuenta el mejor puntaje de cada equipo y los empates respetan la prioridad desde el mano. Irse al mazo elimina solo a ese jugador; la mano termina recién si todo su equipo se fue al mazo. El 3 vs 3 se juega en formato redonda: participan los seis en cada mano.</p>');
 $('#rankBtn').onclick=()=>modal('Ranking local',`<p>Victorias: ${profile.wins}<br>Racha: ${profile.streak}<br>Monedas: ${profile.coins}</p>`);
 $('#settingsBtn').onclick=()=>modal('Ajustes','<button onclick="localStorage.removeItem(\'trucoProfile\');localStorage.removeItem(\'trucoCityFury\');location.reload()">Reiniciar progreso</button>');
-$('#emotesBtn').onclick=emotePanel;$('#closeModal').onclick=closeModal;$('#exitGame').onclick=()=>{clearTimeout(botTimer);clearTimeout(nextHandTimer);clearTimeout(speechTimer);if(mode==='online'){leaveOnlineRoom('menu');return;}if(mode==='offline'&&offlineContext.source==='campaign'){renderCampaignRoute();show('tourMap');}else show('menu');};$$('.close[data-to]').forEach(b=>b.onclick=()=>{if(b.dataset.to==='tourCover')renderCampaignCover();show(b.dataset.to);});
+$('#emotesBtn').onclick=emotePanel;$('#chatBtn').onclick=toggleOnlineChat;$('#chatClose').onclick=closeOnlineChat;$('#chatForm').onsubmit=e=>{e.preventDefault();sendOnlineChat();};$('#closeModal').onclick=closeModal;$('#exitGame').onclick=()=>{clearTimeout(botTimer);clearTimeout(nextHandTimer);clearTimeout(speechTimer);if(mode==='online'){leaveOnlineRoom('menu');return;}if(mode==='offline'&&offlineContext.source==='campaign'){renderCampaignRoute();show('tourMap');}else show('menu');};$$('.close[data-to]').forEach(b=>b.onclick=()=>{if(b.dataset.to==='tourCover')renderCampaignCover();show(b.dataset.to);});
 renderProfile();saveCampaign();
