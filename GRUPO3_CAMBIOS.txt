@@ -1,0 +1,31 @@
+TRUCO ARGENTINO — GRUPO 3
+==========================
+
+PERSONALIZACIÓN DE PERFIL
+- Se reemplazó el selector viejo por los 8 avatares circulares definitivos elegidos para el jugador.
+- Pantalla "Perfil" con vista previa, nombre editable (máx. 16 caracteres), selección visual y botón Guardar.
+- El perfil queda persistido en localStorage.
+- Se migran perfiles viejos sin romper victorias, monedas ni racha.
+- El avatar se ve en el menú y también en la mesa durante la partida.
+- En modo online, nombre y avatar viajan en el estado público y el rival ve la elección real.
+- Se mantienen los assets legacy solo para compatibilidad si entra un cliente viejo, pero ya no aparecen en el selector.
+
+ROBUSTEZ / ONLINE
+- Nombres y IDs de avatar se normalizan/sanitizan antes de entrar al motor.
+- El estado público online mantiene oculta la mano rival.
+- En una sala en espera ya no se inventa visualmente un rival con avatar por defecto.
+
+PRUEBAS AUTOMÁTICAS
+- Reglas y regresiones del motor de Truco.
+- Diferenciación básica de personalidades de bots.
+- Progreso y revancha de La Ciudad de la Furia.
+- Normalización y persistencia lógica del perfil.
+- Contrato DOM: todos los elementos usados por main.js existen.
+- Estado público online: nombre/avatar visibles, cartas rivales ocultas.
+- Integridad de assets: 8 avatares, 10 bots, 40 cartas, dorso, 12 emotes y mapa.
+- 300 partidas completas de integración contra los 10 bots.
+- 500 generaciones aleatorias de la ruta: Chiqui siempre #5, Cristina siempre #10.
+- 500 partidas completas aleatorias del motor para detectar bloqueos/estados corruptos.
+
+Ejecutar pruebas:
+  npm test

@@ -1,0 +1,79 @@
+TRUCO ARGENTINO — REVISIÓN PROFUNDA PRE-BETA
+=============================================
+Base revisada: truco-online-revancha-2v2-3v3.zip
+Versión: 1.2.0-beta-final
+
+ÁREAS AUDITADAS
+---------------
+- Motor de Truco 1v1, 2v2 y 3v3.
+- Envido / Real Envido / Falta Envido.
+- Truco / Retruco / Vale 4.
+- Pardas, mano, rotación de turnos, mazo y reparto.
+- Privacidad de cartas en online.
+- Crear/unirse/salir/reconectar salas.
+- Revancha en la misma sala.
+- Todos los botones estáticos y dinámicos.
+- Gira Nacional / La Ciudad de la Furia.
+- IA y frases de los 10 bots.
+- Perfil y los 8 avatares.
+- Assets: 40 cartas, dorso, emotes, bots y mapa.
+- Comportamiento responsive en móvil y pantallas bajas.
+
+CORRECCIONES DE ESTA ÚLTIMA REVISIÓN
+------------------------------------
+1. Validación de modos y cantos endurecida:
+   valores heredados de Object como "__proto__" o "constructor" ya no pueden
+   entrar como modo de sala o tipo de Envido.
+
+2. Protección contra doble toque en acciones online:
+   después de enviar carta/canto/respuesta/mazo, las acciones quedan pendientes
+   hasta recibir el nuevo estado o un error del servidor. Evita duplicados por
+   doble tap o lag en celulares.
+
+3. Responsive de mesa corregido:
+   - barra de acciones horizontal desplazable en móviles;
+   - cartas y zonas centrales compactadas;
+   - ajuste específico para teléfonos en horizontal / pantallas de poca altura;
+   - 2v2 y 3v3 compactados para evitar superposición de controles.
+
+4. Códigos de sala endurecidos:
+   ahora siempre son exactamente 4 caracteres y se generan con randomInt de
+   crypto en lugar de depender del recorte de Math.random().
+
+5. Socket.IO limitado a mensajes entrantes de 64 KB, suficiente para todas las
+   acciones del juego y más resistente a payloads absurdamente grandes.
+
+6. Se agregaron pruebas de regresión para:
+   - enums/prototype keys;
+   - bloqueo de acciones online pendientes;
+   - responsive móvil/landscape;
+   - cableado de botones estáticos y handlers dinámicos.
+
+PRUEBAS FINALES
+---------------
+La suite completa pasa después de las correcciones.
+Incluye, entre otras:
+- 500 partidas fuzz 1v1 completas.
+- 500 partidas fuzz 2v2/3v3 completas.
+- 300 partidas completas contra los 10 bots.
+- 500 rutas de campaña.
+- integración de servidor simulada 2v2/3v3 + revancha.
+- privacidad de cartas online.
+- ciclo de salida/reconexión/emotes/códigos.
+- comprobación de assets y DOM.
+- 69.726 estados/acciones online adicionales verificados en stress extra.
+
+LIMITACIONES CONOCIDAS (NO BLOQUEANTES PARA BETA CERRADA)
+----------------------------------------------------------
+- Las salas viven en memoria RAM: si el proceso de Render se reinicia o se hace
+  un deploy, las partidas que estaban activas se pierden.
+- La recuperación de una caída de conexión está configurada en 20 segundos.
+- El 3v3 está implementado en formato redonda; no hay pica-pica.
+- Esta revisión automatizada no sustituye una prueba real con 6 dispositivos,
+  diferentes redes, lag real y navegadores móviles.
+
+ESTADO
+------
+A nivel de código/lógica: APTO PARA BETA CERRADA.
+Antes de abrirla a usuarios, hacer un smoke test real 1v1, 2v2 y 3v3 desde
+varios dispositivos, incluyendo reconexión y revancha.

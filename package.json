@@ -1,0 +1,14 @@
+{
+  "name": "truco-argentino-premium-online",
+  "version": "1.2.0-beta-final",
+  "private": true,
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node tests/core.test.js && node tests/bots.test.js && node tests/campaign.test.js && node tests/profile.test.js && node tests/dom-contract.test.js && node tests/online-state.test.js && node tests/online-actions.test.js && node tests/online-lifecycle.test.js && node tests/assets.test.js && node tests/bots-integration.test.js && node tests/campaign-fuzz.test.js && node tests/fuzz.test.js && node tests/team-modes.test.js && node tests/team-fuzz.test.js && node tests/rematch-ui.test.js && node tests/server-team-flow.test.js && node tests/hardening-beta.test.js && node tests/beta-ui-contract.test.js"
+  },
+  "dependencies": {
+    "express": "4.18.3",
+    "socket.io": "4.7.5"
+  },
+  "devDependencies": {}
+}

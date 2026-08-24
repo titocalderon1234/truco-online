@@ -1,0 +1,80 @@
+REVISIÓN PROFUNDA — ONLINE / BOTONES / PARTIDA
+===============================================
+
+Fecha de revisión: 2026-08-24
+Base: Grupo 3 (Perfil + La Ciudad de la Furia + motor/IA)
+
+CORRECCIONES IMPORTANTES REALIZADAS
+-----------------------------------
+1) Salir de una partida online ahora abandona realmente la sala.
+   Antes el botón "Salir" solo cambiaba de pantalla: el socket seguía dentro de la mesa y un nuevo estado podía devolver al jugador a la partida.
+
+2) Manejo correcto cuando el rival se desconecta.
+   - Aviso de conexión interrumpida.
+   - La mesa queda pausada durante una ventana de 20 segundos.
+   - Si el rival vuelve, se recupera el estado.
+   - Si no vuelve, la sala se cierra y el jugador recibe una salida clara al menú.
+
+3) Recuperación de cortes breves de Socket.IO activada (20 s).
+   Esto cubre caídas temporales de red/transporte mientras el proceso del servidor siga vivo.
+
+4) Protección contra salas fantasma / múltiples salas en el mismo socket.
+   Crear o cambiar de sala limpia correctamente la anterior.
+
+5) Código de sala normalizado y validado.
+   - trim de espacios
+   - mayúsculas
+   - exactamente 4 caracteres alfanuméricos
+   - mensajes de error claros
+
+6) Botones Crear sala / Unirse protegidos contra doble toque mientras se procesa la solicitud.
+
+7) Sala en espera muestra el código y agrega botón "Copiar código".
+
+8) Al terminar una partida online aparece una salida clara al menú.
+   La victoria/derrota actualiza el perfil local una sola vez por sala.
+
+9) Emotes online asegurados.
+   - solo se aceptan los 12 emotes válidos
+   - pequeño límite anti-spam
+   - el emote remoto ya no se inserta como HTML sin validar
+
+10) Servidor más defensivo ante payloads incorrectos.
+    Evita errores por callbacks/payloads malformados y devuelve mensajes apropiados.
+
+PRUEBAS
+-------
+- Todas las pruebas anteriores siguen pasando.
+- online-state.test.js: privacidad de mano rival + perfil público.
+- online-actions.test.js: miles de estados públicos y botones/acciones legales cruzados contra el motor.
+- online-lifecycle.test.js: salida de sala, reconexión, validación de código y emotes.
+- Revisión profunda adicional: más de 36.000 estados/acciones online aleatorios sin estado muerto ni acción pública inválida.
+- 500 partidas fuzz del motor.
+- 300 partidas completas contra bots.
+- 500 rutas de campaña.
+
+BOTONES REVISADOS
+-----------------
+- Gira Nacional: abre portada de La Ciudad de la Furia.
+- Entrar a la gira: abre recorrido.
+- Rivales: bloqueado/disponible/vencido y revancha.
+- Perfil / Editar: selección de 8 avatares y guardado.
+- Reglas: abre modal.
+- Ranking: abre estadísticas locales.
+- Ajustes: abre reinicio de progreso.
+- Mesa Online: abre crear/unirse.
+- Crear sala / Unirse: validados y protegidos.
+- Salir de partida: offline vuelve a ruta; online abandona la sala.
+- Cartas: solo habilitadas cuando el motor permite jugar.
+- Truco / Retruco / Vale 4: derivados del estado legal del servidor.
+- Envido / Real Envido / Falta Envido: derivados del estado legal del servidor.
+- Quiero / No quiero: derivados del canto pendiente.
+- Ir al mazo: validado por el servidor.
+- Emotes: validados.
+
+LIMITACIONES QUE SIGUEN SIENDO ARQUITECTÓNICAS
+----------------------------------------------
+- Las salas viven en memoria RAM del servidor. Un REINICIO/REDEPLOY completo de Render pierde las partidas activas. La recuperación agregada cubre cortes breves de conexión, no un reinicio del proceso.
+- No existe todavía botón de "revancha online" dentro de la misma sala; para otra partida hay que crear/entrar a una nueva.
+- Ranking sigue siendo local, no ranking global online.
+- Ajustes por ahora solo contiene reinicio de progreso; no hay controles de audio/música en esta base.

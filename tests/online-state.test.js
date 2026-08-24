@@ -1,0 +1,14 @@
+const assert=require('assert');const L=require('../server/gameLogic');const P=require('../client/profile');
+const g=L.newGame('ABCD',15);
+const a=P.normalize({name:'Uri',avatar:P.AVATAR_IDS[2]});const b=P.normalize({name:'Gabi',avatar:P.AVATAR_IDS[6]});
+assert(L.addPlayer(g,'socketA',a));assert(L.addPlayer(g,'socketB',b));
+const sa=L.publicState(g,'socketA'), sb=L.publicState(g,'socketB');
+assert.equal(sa.me.name,'Uri');assert.equal(sa.me.avatar,P.AVATAR_IDS[2]);assert.equal(sa.rival.name,'Gabi');assert.equal(sa.rival.avatar,P.AVATAR_IDS[6]);
+assert.equal(sb.me.name,'Gabi');assert.equal(sb.rival.name,'Uri');
+assert.equal(sa.me.hand.length,3);assert.equal(sa.rival.handCount,3);assert(!('hand' in sa.rival),'el estado público no debe revelar cartas rivales');
+assert.equal(sb.me.hand.length,3);assert(!('hand' in sb.rival));
+const turn=g.turn, other=turn==='socketA'?'socketB':'socketA';
+assert.equal(L.playCard(g,other,g.players[other].hand[0].id).ok,false,'no debe poder jugar fuera de turno');
+const ownCard=g.players[turn].hand[0].id;assert(L.playCard(g,turn,ownCard).ok);
+const post=L.publicState(g,other);assert.equal(post.rival.handCount,2,'el rival debe ver que el otro gastó una carta, no cuál conserva');
+console.log('online-state.test.js: OK · nombre/avatar viajan y la mano rival queda oculta');

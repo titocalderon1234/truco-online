@@ -1,0 +1,69 @@
+ACTUALIZACIÓN ONLINE — REVANCHA + 2v2 + 3v3
+================================================
+
+1) REVANCHA ONLINE
+- Al terminar una partida aparece el botón REVANCHA.
+- La revancha se juega dentro de la misma sala y conserva los mismos jugadores/equipos.
+- Todos los jugadores deben aceptar: 2/2 en 1v1, 4/4 en 2v2 y 6/6 en 3v3.
+- La pantalla muestra cuántos jugadores ya están listos.
+- Cuando acepta el último jugador se reinician los puntos, se reparten cartas nuevas y rota el mano.
+- Cada revancha tiene un matchNumber distinto para registrar correctamente las victorias sin duplicarlas.
+
+2) SALAS 2v2 Y 3v3
+- Al crear una Mesa Online se puede elegir 1v1, 2v2 o 3v3.
+- Quien se une con código no tiene que elegir modo: la sala lo informa automáticamente.
+- 2v2: 4 jugadores. Equipos alternados por asiento: 1-3 contra 2-4.
+- 3v3: 6 jugadores. Equipos alternados: 1-3-5 contra 2-4-6.
+- El 3v3 implementado es REDONDA: los seis participan en cada mano.
+- La partida arranca únicamente cuando la sala está completa.
+
+3) BAZAS POR EQUIPOS
+- Cada jugador activo juega una carta por baza.
+- La baza solo se resuelve cuando jugaron todos los jugadores activos.
+- Si la carta más alta pertenece a un solo equipo, ese equipo gana la baza.
+- Si dos compañeros empatan con la carta más alta, gana su equipo y vuelve a salir el primero de esos compañeros que la jugó.
+- Si la máxima queda empatada entre equipos rivales, la baza es PARDA y vuelve a salir el jugador que había iniciado esa baza.
+- Las reglas de primera/segunda/tercera parda se aplican a nivel de equipo.
+
+4) TRUCO / RETRUCO / VALE 4 POR EQUIPOS
+- En 2v2/3v3 cualquier integrante activo puede cantar Truco por su equipo.
+- Cualquier integrante activo del equipo contrario puede responder Quiero / No quiero.
+- El equipo que acepta un Truco obtiene el derecho de subir posteriormente a Retruco.
+- El equipo que acepta el Retruco obtiene el derecho de subir a Vale 4.
+- También se puede contra-subir inmediatamente durante la respuesta.
+- Si un equipo dice No quiero, los puntos corresponden al equipo que hizo el último canto válido.
+
+5) ENVIDO POR EQUIPOS
+- En la primera baza cualquier jugador activo que todavía no haya jugado su primera carta puede iniciar Envido/Real/Falta.
+- Cualquier integrante del equipo rival puede responder o subir la apuesta.
+- Al aceptar, se calcula el Envido de todos los jugadores activos.
+- Para cada equipo cuenta SU MEJOR ENVIDO.
+- Si los dos mejores valores empatan, gana el jugador con prioridad más temprana recorriendo desde el mano; por lo tanto gana el equipo de ese jugador.
+- Envido + Envido, Real Envido, Falta Envido y rechazos conservan la puntuación del motor original.
+
+6) IRSE AL MAZO
+- En 1v1 mantiene el funcionamiento existente.
+- En 2v2/3v3 un jugador puede irse al mazo cuando llega su turno.
+- Ese jugador deja de participar en las bazas restantes de esa mano.
+- Sus compañeros siguen jugando.
+- La mano se entrega recién cuando TODOS los integrantes activos de un equipo se fueron al mazo.
+
+7) INTERFAZ
+- Selector de modo al crear sala: 1v1 / 2v2 / 3v3.
+- En mesas por equipos se muestran todos los participantes, su equipo, turno, estado MAZO y cantidad de cartas ocultas.
+- En el centro se ven las cartas jugadas por cada participante.
+- Marcador: Tu equipo vs Rivales.
+- En la espera se muestran los lugares ocupados y los lugares que faltan.
+- Los botones de Truco/Envido aparecen también a compañeros que legalmente pueden cantar aunque no sea su turno de carta.
+
+8) CONEXIONES
+- Una caída de conexión pausa toda la mesa durante el período de recuperación.
+- En 2v2/3v3 se rastrean múltiples desconexiones simultáneas por separado.
+- Si un jugador de una sala aún en espera se va, su lugar vuelve a quedar libre (si no era el creador).
+- Si durante una partida un jugador abandona definitivamente, la mesa se cierra porque ya no puede continuar con equipos completos.
+
+PRUEBAS AGREGADAS
+- Casos deterministas 2v2/3v3: equipos, turnos, bazas, pardas, Envido, Truco, mazo, privacidad y revancha.
+- 500 partidas completas aleatorias 2v2/3v3 sin bloqueo.
+- Flujo simulado del servidor real: creación/unión de sala 2v2 y 3v3, juego de bazas y revancha 4/4 en la misma sala.
+- Se mantienen además todas las pruebas anteriores de 1v1, bots, campaña, perfil, assets y fuzz del motor.

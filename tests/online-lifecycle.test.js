@@ -1,0 +1,13 @@
+const assert=require('assert'),fs=require('fs'),path=require('path');
+const server=fs.readFileSync(path.join(__dirname,'..','server','server.js'),'utf8');
+const main=fs.readFileSync(path.join(__dirname,'..','client','main.js'),'utf8');
+assert(server.includes("socket.on('leaveRoom'"),'servidor debe soportar salida explícita de mesa');
+assert(server.includes('connectionStateRecovery'),'debe existir recuperación de desconexiones breves');
+assert(server.includes('opponentConnectionLost'),'debe pausar/avisar ante caída temporal');
+assert(server.includes('VALID_EMOTES.has(name)'),'emotes online deben estar validados');
+assert(server.includes("trim().toUpperCase()"),'código de sala debe normalizarse');
+assert(main.includes("if(mode==='online'){leaveOnlineRoom('menu');return;}"),'Salir debe abandonar la sala online');
+assert(main.includes("socket.on('opponentLeft'"),'cliente debe manejar abandono rival');
+assert(main.includes('copyRoomCode'),'sala en espera debe permitir copiar código');
+assert(main.includes('document.createElement(\'img\')'),'emote remoto no debe interpolarse como HTML');
+console.log('online-lifecycle.test.js: OK · salida, reconexión, código y emotes protegidos');
