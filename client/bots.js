@@ -226,106 +226,144 @@
   }
   function randJitter(scale=.08){return (Math.random()-.5)*2*scale;}
 
+  // --- Lectura de mesa sin hacer trampa ---
+  // La IA usa solamente sus cartas y lo que ya quedó visible sobre la mesa.
+  function fullDeck(){const d=[];for(const suit of Core.SUITS)for(const value of Core.VALUES)d.push({suit,value,id:`${value}_${suit}`});return d;}
+  function visibleIds(g,id){
+    const ids=new Set(),me=g.players[id];if(me)for(const c of [...me.hand,...me.played])ids.add(c.id);
+    for(const oid of g.order||[]){if(oid===id)continue;for(const c of g.players[oid]?.played||[])ids.add(c.id);}
+    return ids;
+  }
+  function unknownPool(g,id){const seen=visibleIds(g,id);return fullDeck().filter(c=>!seen.has(c.id));}
+  function safeClone(g){return JSON.parse(JSON.stringify(g));}
+  function cardVsUnknown(g,id,card){
+    const pool=unknownPool(g,id);if(!pool.length)return .5;const p=Core.power(card);let score=0;
+    for(const c of pool){const op=Core.power(c);if(p>op)score+=1;else if(p===op)score+=.5;}
+    return score/pool.length;
+  }
+  function exactResponseToVisibleCard(g,id){
+    const opp=Core.other(g,id),oppCard=opp?g.table[opp]:null;if(g.turn!==id||!oppCard||g.table[id])return null;
+    const hand=g.players[id]?.hand||[];if(!hand.length)return 0;let best=-1;
+    for(const c of hand){const cg=safeClone(g);if(cg.truco?.pending){cg.truco.pending=null;cg.truco.by=null;cg.truco.byTeam=null;}if(cg.envido?.pending){cg.envido.pending=false;cg.envido.by=null;cg.envido.byTeam=null;}
+      const r=Core.playCard(cg,id,c.id);if(!r?.ok)continue;
+      if(r.handEnded){best=Math.max(best,r.handWinner===id?1:0);continue;}
+      if(r.trickResolved){let v=r.trickWinner===id?.78:!r.trickWinner?.58:.22;v+=handStrength(cg.players[id]?.hand||[])*.16;best=Math.max(best,clamp(v));}
+      else best=Math.max(best,.5);
+    }
+    return best<0?null:best;
+  }
+  function estimateTrucoEquity(g,id){
+    const exact=exactResponseToVisibleCard(g,id);if(exact!==null)return exact;
+    const hand=g.players[id]?.hand||[];if(!hand.length)return .02;
+    const ctx=trickContext(g,id),hist=g.history||[],opp=Core.other(g,id),myTable=g.table[id]||null;
+    let eq=.20+handStrength(hand)*.66;
+    if(hist.length===1){const h=hist[0];if(h.winner===id)eq+=.17;else if(h.winner)eq-=.20;else eq-=.02;}
+    else if(hist.length>=2){eq=.12+handStrength(hand)*.74;if(ctx.delta>0)eq+=.20;else if(ctx.delta<0)eq-=.22;}
+    if(myTable&&g.turn===opp){const hold=cardVsUnknown(g,id,myTable);eq=eq*.55+hold*.45;}
+    if(hist.length===2&&hand.length===1)eq=cardVsUnknown(g,id,hand[0]);
+    return clamp(eq,.01,.99);
+  }
+  function estimateEnvidoEquity(g,id){
+    const pts=Core.envido(Core.allCards(g,id));let eq=pts>=33?.995:pts===32?.97:pts===31?.93:pts===30?.87:pts===29?.79:pts===28?.69:pts===27?.59:pts===26?.49:pts===25?.40:pts===24?.32:pts===23?.25:pts===22?.19:pts===21?.14:.09;
+    if(g.mano===id)eq+=.025;return clamp(eq,.03,.997);
+  }
+  function scorePressure(g,id){
+    const opp=Core.other(g,id),mine=g.score[id]||0,theirs=g.score[opp]||0,target=g.targetScore||15;
+    return {mine,theirs,target,behind:theirs-mine,oppClose:target-theirs,mineClose:target-mine};
+  }
+
   function decideInitialEnvido(g,bot,mem){
     const actions=Core.getActions(g,seat(bot));if(!actions.envidoCalls.length)return null;
     resetHandMemory(mem,g.handNumber);if(mem.considered.envido)return null;mem.considered.envido=true;
-    const pts=Core.envido(Core.allCards(g,seat(bot)));const {liar,fish,agg}=personality(bot,g,mem);
-    let base=pts>=30?.86:pts>=27?.62:pts>=24?.28:pts>=21?.10:.03;
-    base += liar*(pts<27?.22:.04) + agg*.12 - fish*.16;
-    if(bot.trait==='trap'&&pts>=30)base-=.18;
-    if(bot.trait==='fisher'&&pts>=28)base-=.28;
-    if(bot.trait==='frontal'&&pts>=27)base+=.16;
-    if(bot.trait==='chaotic')base+=randJitter(.18);
-    if(bot.trait==='deceptive')base+=pts<25?.15:-.12;
-    if(bot.trait==='conservative')base-=.24;
-    if(!chance(base))return null;
-    const deficit=(g.score[Core.other(g,seat(bot))]||0)-(g.score[seat(bot)]||0);
-    if(actions.envidoCalls.includes('falta') && (pts>=31||liar>.8) && (agg>.65||deficit>=4) && chance(.08+agg*.12+liar*.08)) return 'falta';
-    if(actions.envidoCalls.includes('real') && (pts>=29||liar>.72) && chance(.10+agg*.20+liar*.08)) return 'real';
+    const id=seat(bot),pts=Core.envido(Core.allCards(g,id)),eq=estimateEnvidoEquity(g,id),{liar,fish,agg}=personality(bot,g,mem),sp=scorePressure(g,id);
+    let p=.03+eq*.58+agg*.13+liar*(1-eq)*.16-fish*.10;
+    if(pts>=30)p+=.16;else if(pts<=22)p-=.14;
+    if(bot.trait==='fisher'&&pts>=29)p-=.16;if(bot.trait==='trap'&&pts>=30)p-=.10;if(bot.trait==='frontal'&&pts>=27)p+=.10;
+    if(bot.trait==='chaotic')p+=randJitter(.12);if(bot.trait==='conservative')p-=.20;
+    if(!chance(p))return null;
+    const foldy=(mem.player.envidoNo||0)/Math.max(1,(mem.player.envidoNo||0)+(mem.player.envidoWant||0));
+    if(actions.envidoCalls.includes('falta')&&(pts>=31||((liar>.82&&foldy>.55)))&&(sp.behind>=3||sp.mineClose<=4)&&chance(.12+agg*.12+eq*.18))return 'falta';
+    if(actions.envidoCalls.includes('real')&&(pts>=29||(liar>.78&&foldy>.55))&&chance(.14+agg*.12+eq*.18))return 'real';
     return 'envido';
   }
 
   function decideEnvidoResponse(g,bot,mem){
-    const actions=Core.getActions(g,seat(bot));if(!actions.canRespondEnvido)return null;
-    const pts=Core.envido(Core.allCards(g,seat(bot)));const {liar,fish,agg}=personality(bot,g,mem);
-    let accept=pts>=30?.93:pts>=27?.76:pts>=24?.46:pts>=21?.22:.08;
-    accept+=agg*.12+fish*.05+liar*(pts<25?.05:0)+randJitter(.05);
-    const raises=actions.envidoRaises;
+    const id=seat(bot),actions=Core.getActions(g,id);if(!actions.canRespondEnvido)return null;
+    const pts=Core.envido(Core.allCards(g,id)),eq=estimateEnvidoEquity(g,id),{liar,fish,agg}=personality(bot,g,mem),sp=scorePressure(g,id),chain=g.envido.chain||[];
+    const accepted=Core.acceptedEnvidoValue(g,chain),before=chain.slice(0,-1),reject=before.length?Core.acceptedEnvidoValue(g,before):1;
+    let required=.46+(accepted>=5?.07:0)+(accepted>=8?.07:0)+fish*.025-agg*.035;
+    if(sp.theirs+reject>=sp.target)required-=.14;if(sp.mine-sp.theirs>=6)required+=.04;
+    let accept=eq>=required;
+    if(!accept&&eq>required-.08&&chance(.18+agg*.18))accept=true;
+    const raises=actions.envidoRaises||[],foldy=(mem.player.envidoNo||0)/Math.max(1,(mem.player.envidoNo||0)+(mem.player.envidoWant||0));
     if(raises.length){
-      let raiseProb=(pts>=30?.45:pts>=27?.22:.04)+agg*.22+liar*(pts<27?.16:.05)+fish*(pts>=29?.12:0);
-      if(bot.trait==='fisher'&&pts>=29)raiseProb+=.18;
-      if(bot.trait==='deceptive')raiseProb+=pts<25?.10:.10;
-      if(bot.trait==='conservative')raiseProb-=.24;
-      if(chance(raiseProb)){
-        if(raises.includes('falta')&&(pts>=31||liar>.88)&&chance(.16+agg*.2))return {type:'raise',call:'falta'};
-        if(raises.includes('real')&&(pts>=28||liar>.72))return {type:'raise',call:'real'};
-        if(raises.includes('envido'))return {type:'raise',call:'envido'};
-      }
+      let raise=false;if(eq>.76)raise=chance(.35+agg*.30);else if(eq>.62)raise=chance(.12+agg*.18);else if(liar>.78&&foldy>.5)raise=chance((liar-.7)*.28);
+      if(bot.trait==='conservative')raise=false;
+      if(raise){if(raises.includes('falta')&&(pts>=31||(liar>.9&&foldy>.62))&&chance(.28+eq*.28))return {type:'raise',call:'falta'};if(raises.includes('real')&&(pts>=28||eq>.68||liar>.82))return {type:'raise',call:'real'};if(raises.includes('envido'))return {type:'raise',call:'envido'};}
     }
-    return {type:chance(accept)?'want':'no'};
+    return {type:accept?'want':'no'};
   }
 
   function decideInitialTruco(g,bot,mem){
-    const actions=Core.getActions(g,seat(bot));if(!actions.trucoCall)return false;
+    const id=seat(bot),actions=Core.getActions(g,id);if(!actions.trucoCall)return false;
     resetHandMemory(mem,g.handNumber);const lvl=g.truco.level;if(mem.considered.trucoLevel===lvl)return false;mem.considered.trucoLevel=lvl;
-    const str=handStrength(g.players[seat(bot)].hand),ctx=trickContext(g,seat(bot)),{liar,fish,agg}=personality(bot,g,mem);
-    let p=.04+str*.55+agg*.32+liar*(1-str)*.22-fish*.16;
-    p+=ctx.delta*.12;
-    if(bot.trait==='trap'&&str>.68)p-=.16;
-    if(bot.trait==='frontal')p+=str*.20;
-    if(bot.trait==='impulsive')p+=.10+randJitter(.08);
-    if(bot.trait==='fisher')p-=.16;
-    if(bot.trait==='chaotic')p+=randJitter(.22);
-    if(bot.trait==='deceptive')p+=(str<.45?.17:-.10);
-    if(bot.trait==='efficient')p+=str>.55?.13:-.07;
-    if(bot.trait==='conservative')p-=.28;
-    if(lvl===2)p-=.10;if(lvl===3)p-=.18;
+    const eq=estimateTrucoEquity(g,id),{liar,fish,agg}=personality(bot,g,mem),sp=scorePressure(g,id),foldy=(mem.player.trucoNo||0)/Math.max(1,(mem.player.trucoNo||0)+(mem.player.trucoWant||0));
+    let p=eq>=.78?.88:eq>=.64?.70:eq>=.54?.50:eq>=.44?.30:eq>=.32?.14:.035;
+    p+=agg*.14-fish*.07+liar*(1-eq)*.07;
+    if(lvl===2)p-=.06;if(lvl===3)p-=.12;
+    if(bot.trait==='frontal')p+=eq>=.18?.12:-.13;
+    if(bot.trait==='fisher')p-=.09;if(bot.trait==='trap'&&eq>.72)p-=.08;
+    if(bot.trait==='impulsive')p+=.07;if(bot.trait==='chaotic')p+=randJitter(.10);if(bot.trait==='conservative')p-=.20;
+    if(eq<.06){p=liar*(.025+.055*foldy);if(bot.trait==='deceptive'||bot.trait==='chaotic'||bot.trait==='adaptive')p+=liar*.025;if(bot.trait==='frontal'||bot.trait==='conservative')p*=.25;}
+    if(sp.behind>=6)p+=agg*.05;
     return chance(p);
   }
 
   function decideTrucoResponse(g,bot,mem){
-    const actions=Core.getActions(g,seat(bot));if(!actions.canRespondTruco)return null;
-    const str=handStrength(g.players[seat(bot)].hand),ctx=trickContext(g,seat(bot)),{liar,fish,agg}=personality(bot,g,mem);
-    let accept=.10+str*.70+agg*.26+ctx.delta*.18+liar*(1-str)*.08+randJitter(.05);
-    if(bot.trait==='frontal')accept+=.10;if(bot.trait==='conservative')accept-=.20;if(bot.trait==='impulsive')accept+=.08;
-    let raise=.02+str*.42+agg*.36+liar*(1-str)*.16+ctx.delta*.12-fish*.06;
-    if(bot.trait==='frontal')raise+=.12;if(bot.trait==='fisher'&&str>.64)raise+=.08;if(bot.trait==='deceptive')raise+=.08;
-    if(bot.trait==='conservative')raise-=.25;if(bot.trait==='chaotic')raise+=randJitter(.16);
-    if(actions.canCounterTruco&&chance(raise))return 'raise';
-    return chance(accept)?'want':'no';
+    const id=seat(bot),actions=Core.getActions(g,id);if(!actions.canRespondTruco)return null;
+    const proposed=g.truco.pending||2,current=g.truco.level||1,eq=estimateTrucoEquity(g,id),{liar,fish,agg}=personality(bot,g,mem),sp=scorePressure(g,id);
+    // Umbral de EV + colchón humano: aceptar Vale 4 no depende solo de tener una carta alta,
+    // sino de la probabilidad real de cerrar la mano desde la posición actual.
+    const humanBase=proposed===4?.56:proposed===3?.47:.39;
+    let required=humanBase+fish*.055-agg*.085;
+    if(bot.trait==='conservative')required+=.09;if(bot.trait==='frontal')required-=.025;if(bot.trait==='impulsive')required-=.035;
+    if(sp.theirs+current>=sp.target)required-=.12;if(sp.mine-sp.theirs>=6)required+=.04;
+    required=clamp(required,.25,.70);
+    const canAccept=eq>=required||(eq>=required-.06&&chance(.16+agg*.15));
+    const foldy=(mem.player.trucoNo||0)/Math.max(1,(mem.player.trucoNo||0)+(mem.player.trucoWant||0));
+    if(actions.canCounterTruco){
+      const next=proposed+1;let raiseNeed=next===4?.64:.58;raiseNeed+=fish*.035-agg*.07;
+      let raise=eq>=raiseNeed&&chance(.28+agg*.46+(eq-raiseNeed)*.6);
+      if(!raise&&eq<.12&&liar>.72&&foldy>.48)raise=chance((liar-.65)*(.10+.16*foldy));
+      if(bot.trait==='frontal'&&eq>.55)raise=raise||chance(.18);if(bot.trait==='conservative')raise=false;
+      if(raise)return 'raise';
+    }
+    // Con una mano matemáticamente muerta no "quiere" por personalidad: acepta solo si
+    // existe una chance real. Mentir sirve para cantar/subir, no para regalar puntos.
+    if(eq<.035)return 'no';
+    return canAccept?'want':'no';
   }
 
   function chooseCard(g,bot,mem){
-    const hand=[...g.players[seat(bot)].hand];if(!hand.length)return null;
-    const opp=Core.other(g,seat(bot));const oppCard=g.table[opp]||null;const trait=bot.trait;
-    const asc=[...hand].sort((a,b)=>Core.power(a)-Core.power(b));const desc=[...asc].reverse();
+    const id=seat(bot),hand=[...g.players[id].hand];if(!hand.length)return null;
+    const opp=Core.other(g,id),oppCard=opp?g.table[opp]:null,asc=[...hand].sort((a,b)=>Core.power(a)-Core.power(b)),desc=[...asc].reverse(),trait=bot.trait;
     if(oppCard){
-      const beating=asc.filter(c=>Core.power(c)>Core.power(oppCard));
-      const tying=asc.filter(c=>Core.power(c)===Core.power(oppCard));
-      const ctx=trickContext(g,seat(bot));
-      if(beating.length){
-        if(trait==='frontal'&&chance(.38))return desc.find(c=>Core.power(c)>Core.power(oppCard))||beating[0];
-        if(trait==='impulsive'&&chance(.25))return pick(beating);
-        if(trait==='chaotic'&&chance(.30))return pick(beating);
-        return beating[0];
-      }
-      if(tying.length&&chance((trait==='fisher'||trait==='deceptive') ? .75 : .48))return tying[0];
-      return asc[0];
+      // Probar cada carta con las reglas reales permite detectar pardas, tercera baza y
+      // manos ya ganadas/perdidas. Siempre prioriza cerrar la mano con la carta más barata.
+      const evals=asc.map(c=>{const cg=safeClone(g);const r=Core.playCard(cg,id,c.id);let score=0;if(r?.handEnded)score=r.handWinner===id?1000:-1000;else if(r?.trickResolved)score=r.trickWinner===id?120:!r.trickWinner?65:-120;score-=Core.power(c)*.7;return {c,score,r};});
+      const best=Math.max(...evals.map(x=>x.score)),bestCards=evals.filter(x=>x.score===best);
+      if(best<=-900)return asc[0];return bestCards[0].c;
     }
-    // Leading a trick.
-    const ctx=trickContext(g,seat(bot));
-    if(trait==='frontal')return chance(.58)?desc[0]:asc[Math.min(1,asc.length-1)];
-    if(trait==='impulsive')return chance(.45)?desc[0]:pick(hand);
-    if(trait==='fisher')return asc[0];
-    if(trait==='trap')return chance(.72)?asc[0]:asc[Math.min(1,asc.length-1)];
-    if(trait==='chaotic')return pick(hand);
-    if(trait==='deceptive')return chance(.55)?asc[0]:pick(hand);
-    if(trait==='efficient')return ctx.lost>ctx.won?desc[0]:asc[Math.min(1,asc.length-1)];
+    const ctx=trickContext(g,id),round=(g.history||[]).length;
+    if(round>=2)return desc[0];
+    if(round===1){const h=g.history[0];if(!h.winner||h.winner!==id)return desc[0];return asc[0];}
+    if(trait==='fisher'||trait==='trap'||trait==='deceptive')return asc[0];
+    if(trait==='frontal')return Core.power(desc[0])>=12?desc[0]:asc[Math.min(1,asc.length-1)];
+    if(trait==='efficient')return asc[Math.min(1,asc.length-1)];
+    if(trait==='impulsive')return chance(.30)?desc[0]:asc[Math.min(1,asc.length-1)];
+    if(trait==='chaotic')return chance(.22)?pick(hand):asc[Math.min(1,asc.length-1)];
     if(trait==='conservative')return asc[0];
-    if(trait==='adaptive'){
-      const total=(mem.player.trucoWant||0)+(mem.player.trucoNo||0);const brave=total?(mem.player.trucoWant||0)/total:.5;
-      return brave>.65?asc[0]:(chance(.5)?desc[0]:asc[Math.min(1,asc.length-1)]);
-    }
+    if(trait==='adaptive'){const total=(mem.player.trucoWant||0)+(mem.player.trucoNo||0),brave=total?(mem.player.trucoWant||0)/total:.5;return brave>.65?asc[0]:asc[Math.min(1,asc.length-1)];}
     return asc[Math.min(1,asc.length-1)];
   }
 
